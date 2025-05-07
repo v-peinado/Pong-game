@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Menu</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f1f1f1;
+            flex-direction: column;
+        }
+        button {
+            margin: 10px;
+            padding: 20px 40px;
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Select Game Mode</h1>
+    <button id="singlePlayerBtn">1 vs IA</button>
+    <button id="multiPlayerBtn">1 vs 1 Local</button>
+
+    <script>
+        document.getElementById('singlePlayerBtn').addEventListener('click', () => {
+            window.location.href = 'single_player.html';
+        });
+
+        document.getElementById('multiPlayerBtn').addEventListener('click', () => {
+            window.location.href = 'multi_player.html';
+        });
+    </script>
+</body>
+</html>

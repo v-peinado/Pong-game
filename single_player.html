@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1 vs IA</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f1f1f1;
+            flex-direction: column;
+        }
+        canvas {
+            border: 1px solid #000;
+            background-color: rgb(85, 5, 45);
+        }
+        h1 {
+            color: rgb(28, 42, 236);
+            font-size: 3rem;
+            font-family: 'roboto';
+            position: absolute;
+        }
+        #player1Score {
+            left: 35%;
+        }
+        #player2Score {
+            right: 35%;
+        }
+        #menu {
+            margin-bottom: 20px;
+        }
+        button {
+            margin: 5px;
+            padding: 10px 20px;
+            font-size: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="menu">
+        <label for="difficultySelect">Select Difficulty:</label>
+        <select id="difficultySelect">
+            <option value="easy">Fácil</option>
+            <option value="medium" selected>Intermedio</option>
+            <option value="hard">Difícil</option>
+        </select>
+    </div>
+    <canvas id="canvas" tabindex="0"></canvas>
+    <h1 id="player1Score">0</h1>
+    <h1 id="player2Score">0</h1>
+
+    <script type="module">
+        import { Ball } from './Ball.js';
+        import { Paddle } from './Paddle.js';
+        import { Game } from './Game.js';
+    
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+    
+        canvas.width = 1000;
+        canvas.height = 600;
+    
+        const DIFFICULTY = {
+            easy: {
+                RANDOMNESS: 60,
+                MISS_CHANCE: 0.3,
+                AI_REACTION_DELAY: 300,
+                BALL_SPEED: 7
+            },
+            medium: {
+                RANDOMNESS: 40,
+                MISS_CHANCE: 0.1,
+                AI_REACTION_DELAY: 200,
+                BALL_SPEED: 7
+            },
+            hard: {
+                RANDOMNESS: 20,
+                MISS_CHANCE: 0.05,
+                AI_REACTION_DELAY: 100,
+                BALL_SPEED: 9
+            }
+        };
+    
+        let currentDifficulty = DIFFICULTY.medium;
+        const game = new Game(canvas, true, currentDifficulty);
+        game.start();
+    
+        document.getElementById('difficultySelect').addEventListener('change', (e) => {
+            currentDifficulty = DIFFICULTY[e.target.value];
+            game.difficulty = currentDifficulty;
+            const directionX = game.ball.vel.x >= 0 ? 1 : -1;
+            const directionY = game.ball.vel.y >= 0 ? 1 : -1;
+            game.ball.vel.x = directionX * currentDifficulty.BALL_SPEED;
+            game.ball.vel.y = directionY * currentDifficulty.BALL_SPEED;
+            canvas.focus();
+        });
+    </script>
+</body>
+</html>

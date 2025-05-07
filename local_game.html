@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Juego 1 vs 1 / 1 vs IA</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #f1f1f1;
+    }
+    canvas {
+      border: 1px solid #000;
+      background-color: rgb(85, 5, 45);
+    }
+    h1 {
+      color: rgb(28, 42, 236);
+      font-size: 3rem;
+      font-family: 'roboto';
+      position: absolute;
+    }
+    #player1Score {
+      left: 35%;
+    }
+    #player2Score {
+      right: 35%;
+    }
+    #controls {
+      margin-bottom: 20px;
+    }
+    button, select {
+      margin: 5px;
+      padding: 5px 10px;
+      font-size: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <label for="difficultySelect">Selecciona Dificultad:</label>
+    <select id="difficultySelect">
+      <option value="easy">Fácil</option>
+      <option value="medium" selected>Intermedio</option>
+      <option value="hard">Difícil</option>
+    </select>
+    <!-- Botones para elegir el modo de juego -->
+    <button id="btn1vs1">1 vs 1</button>
+    <button id="btn1vsIA">1 vs IA</button>
+  </div>
+  <canvas id="canvas" tabindex="0"></canvas>
+  <h1 id="player1Score">0</h1>
+  <h1 id="player2Score">0</h1>
+
+  <script>
+    // Constantes globales
+    const KEY_UP = 38,
+          KEY_DOWN = 40,
+          KEY_W = 87,
+          KEY_S = 83,
+          PLAYER_SPEED = 7,
+          AI_INTERVAL = 1000; // milisegundos entre actualizaciones de la IA
+
+    // Configuración de dificultades
+    const DIFFICULTY = {
+      easy: {
+        RANDOMNESS: 60,
+        MISS_CHANCE: 0.3,
+        AI_REACTION_DELAY: 300,
+        BALL_SPEED: 7
+      },
+      medium: {
+        RANDOMNESS: 40,
+        MISS_CHANCE: 0.1,
+        AI_REACTION_DELAY: 200,
+        BALL_SPEED: 7
+      },
+      hard: {
+        RANDOMNESS: 20,
+        MISS_CHANCE: 0.05,
+        AI_REACTION_DELAY: 100,
+        BALL_SPEED: 9
+      }
+    };
+    let currentDifficulty = DIFFICULTY.medium;
+
+    // Vector 2D
+    function vec2(x, y) {
+      return { x, y };
+    }
+
+    // Eventos para controles humanos
+    const keys = [];
+    window.addEventListener('keydown', (e) => keys[e.keyCode] = true);
+    window.addEventListener('keyup', (e) => keys[e.keyCode] = false);
+
+    // Clase Ball
+    class Ball {
+      constructor(pos, vel, rad) {
+        this.pos = pos;
+        this.vel = vel;
+        this.rad = rad;
+      }
+      update() {
+        this.pos.x += this.vel.x;
+        this.pos.y += this.vel.y;
+      }
+      draw(ctx) {
+        ctx.fillStyle = 'green';
+        ctx.beginPath();
+        ctx.arc(this.pos.x, this.pos.y, this.rad, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
+    // Clase Paddle
+    class Paddle {
+      constructor(canvas, pos, vel, width, height, isLeft) {
+        this.canvas = canvas;
+        this.pos = pos;
+        this.vel = vel;
+        this.width = width;
+        this.height = height;
+        this.isLeft = isLeft;
+        this.score = 0;
+        // Para la IA: posición objetivo de la pala
+        this.targetY = pos.y + height / 2;
+      }
+      // Actualización para control humano
+      updateHuman() {
+        if (this.isLeft) {
+          if (keys[KEY_W]) this.pos.y -= this.vel.y;
+          if (keys[KEY_S]) this.pos.y += this.vel.y;
+        } else {
+          if (keys[KEY_UP]) this.pos.y -= this.vel.y;
+          if (keys[KEY_DOWN]) this.pos.y += this.vel.y;
+        }
+        this.checkEdges();
+      }
+      checkEdges() {
+        if (this.pos.y < 0) this.pos.y = 0;
+        if (this.pos.y + this.height > this.canvas.height)
+          this.pos.y = this.canvas.height - this.height;
+      }
+      draw(ctx) {
+        ctx.fillStyle = 'gray';
+        ctx.fillRect(this.pos.x, this.pos.y, this.width, this.height);
+      }
+    }
+
+    // Clase base Player (wrapper de la pala y su control)
+    class Player {
+      constructor(paddle) {
+        this.paddle = paddle;
+      }
+      update(timestamp) { }
+    }
+
+    // Controlador para jugador humano
+    class HumanPlayer extends Player {
+      constructor(paddle) {
+        super(paddle);
+      }
+      update(timestamp) {
+        this.paddle.updateHuman();
+      }
+    }
+
+    // Controlador para la IA
+    class AIPlayer extends Player {
+      constructor(paddle, ball, difficulty, canvas) {
+        super(paddle);
+        this.ball = ball;
+        this.difficulty = difficulty;
+        this.canvas = canvas;
+        this.lastUpdate = 0;
+      }
+      update(timestamp) {
+        // Actualización periódica de la posición objetivo
+        if (timestamp - this.lastUpdate >= AI_INTERVAL) {
+          this.lastUpdate = timestamp;
+          let predictedY = predictBallY(this.ball, this.paddle, this.canvas);
+          // Añadir aleatoriedad a la posición
+          const randomness = Math.random() * this.difficulty.RANDOMNESS - (this.difficulty.RANDOMNESS / 2);
+          let targetY = predictedY + randomness;
+          // Posibilidad de fallo intencional
+          if (Math.random() < this.difficulty.MISS_CHANCE) {
+            targetY = Math.random() * this.canvas.height;
+          }
+          this.paddle.targetY = targetY;
+        }
+        // Movimiento de la pala hacia el objetivo
+        const paddleCenter = this.paddle.pos.y + this.paddle.height / 2;
+        if (paddleCenter < this.paddle.targetY - 5) {
+          this.paddle.pos.y += PLAYER_SPEED;
+        } else if (paddleCenter > this.paddle.targetY + 5) {
+          this.paddle.pos.y -= PLAYER_SPEED;
+        }
+        // Limitar la pala a los bordes
+        this.paddle.checkEdges();
+      }
+    }
+
+    // Función para predecir la posición Y de la pelota (para la IA)
+    function predictBallY(ball, targetPaddle, canvas) {
+      if (ball.vel.x <= 0) return ball.pos.y;
+      // Clonar la pelota en una simulación
+      let tempBall = {
+        pos: { x: ball.pos.x, y: ball.pos.y },
+        vel: { x: ball.vel.x, y: ball.vel.y },
+        rad: ball.rad
+      };
+      let maxIterations = 500, iterations = 0;
+      while (tempBall.pos.x < targetPaddle.pos.x && iterations < maxIterations) {
+        tempBall.pos.x += tempBall.vel.x;
+        tempBall.pos.y += tempBall.vel.y;
+        iterations++;
+        if (tempBall.pos.y + tempBall.rad >= canvas.height) {
+          tempBall.pos.y = canvas.height - tempBall.rad;
+          tempBall.vel.y *= -1;
+        } else if (tempBall.pos.y - tempBall.rad <= 0) {
+          tempBall.pos.y = tempBall.rad;
+          tempBall.vel.y *= -1;
+        }
+      }
+      if (iterations === maxIterations) console.warn("predictBallY reached maximum iterations.");
+      const errorMargin = 15,
+            randomError = (Math.random() * 2 * errorMargin) - errorMargin;
+      let predictedY = tempBall.pos.y + randomError;
+      predictedY = Math.max(ball.rad, Math.min(canvas.height - ball.rad, predictedY));
+      return predictedY;
+    }
+
+    // Funciones de colisión y reinicio de la pelota
+    function ballCollisionWithEdges(ball, canvas) {
+      if (ball.pos.y + ball.rad >= canvas.height) {
+        ball.pos.y = canvas.height - ball.rad;
+        ball.vel.y *= -1;
+      } else if (ball.pos.y - ball.rad <= 0) {
+        ball.pos.y = ball.rad;
+        ball.vel.y *= -1;
+      }
+    }
+
+    function ballCollisionWithPaddle(ball, paddle) {
+      // Distancia entre el centro de la pelota y el centro de la pala
+      let dx = Math.abs(ball.pos.x - (paddle.pos.x + paddle.width / 2));
+      let dy = Math.abs(ball.pos.y - (paddle.pos.y + paddle.height / 2));
+      if (dx <= (ball.rad + paddle.width / 2) && dy <= (ball.rad + paddle.height / 2)) {
+        // Se invierte la velocidad según el lado de colisión
+        if (dx > paddle.width / 2) {
+          ball.vel.x *= -1;
+          if (ball.pos.x < paddle.pos.x) {
+            ball.pos.x = paddle.pos.x - ball.rad;
+          } else {
+            ball.pos.x = paddle.pos.x + paddle.width + ball.rad;
+          }
+        } else if (dy > paddle.height / 2) {
+          ball.vel.y *= -1;
+          if (ball.pos.y < paddle.pos.y) {
+            ball.pos.y = paddle.pos.y - ball.rad;
+          } else {
+            ball.pos.y = paddle.pos.y + paddle.height + ball.rad;
+          }
+        } else {
+          ball.vel.x *= -1;
+          ball.vel.y *= -1;
+          // Ajuste para evitar que la pelota se quede atrapada
+          if (ball.pos.x < paddle.pos.x) {
+            ball.pos.x = paddle.pos.x - ball.rad;
+          } else if (ball.pos.x > paddle.pos.x + paddle.width) {
+            ball.pos.x = paddle.pos.x + paddle.width + ball.rad;
+          }
+          if (ball.pos.y < paddle.pos.y) {
+            ball.pos.y = paddle.pos.y - ball.rad;
+          } else if (ball.pos.y > paddle.pos.y + paddle.height) {
+            ball.pos.y = paddle.pos.y + paddle.height + ball.rad;
+          }
+        }
+      }
+    }
+
+    function respawnBall(ball, canvas) {
+      ball.pos.x = canvas.width / 2;
+      ball.pos.y = Math.random() * canvas.height;
+      ball.vel.x *= -1;
+      ball.vel.y *= -1;
+    }
+
+    // Clase Game: orquesta la actualización, colisiones, dibujo y puntuación
+    class Game {
+      constructor(canvas, ctx, ball, paddle1, paddle2, player1, player2) {
+        this.canvas = canvas;
+        this.ctx = ctx;
+        this.ball = ball;
+        this.paddle1 = paddle1;
+        this.paddle2 = paddle2;
+        this.player1 = player1;
+        this.player2 = player2;
+      }
+      setGameMode(mode) {
+        // Modo "1vs1": ambos jugadores humanos; "1vsAI": segundo jugador controlado por la IA
+        if (mode === "1vs1") {
+          this.player2 = new HumanPlayer(this.paddle2);
+        } else if (mode === "1vsAI") {
+          this.player2 = new AIPlayer(this.paddle2, this.ball, currentDifficulty, this.canvas);
+        }
+      }
+      update(timestamp) {
+        this.ball.update();
+        this.player1.update(timestamp);
+        this.player2.update(timestamp);
+        ballCollisionWithEdges(this.ball, this.canvas);
+        ballCollisionWithPaddle(this.ball, this.paddle1);
+        ballCollisionWithPaddle(this.ball, this.paddle2);
+        this.increaseScore();
+      }
+      draw() {
+        this.ball.draw(this.ctx);
+        this.paddle1.draw(this.ctx);
+        this.paddle2.draw(this.ctx);
+        // Actualizar los contadores de puntuación
+        document.getElementById('player1Score').innerText = this.paddle1.score;
+        document.getElementById('player2Score').innerText = this.paddle2.score;
+      }
+      increaseScore() {
+        if (this.ball.pos.x <= -this.ball.rad) {
+          this.paddle2.score++;
+          respawnBall(this.ball, this.canvas);
+        }
+        if (this.ball.pos.x >= this.canvas.width + this.ball.rad) {
+          this.paddle1.score++;
+          respawnBall(this.ball, this.canvas);
+        }
+      }
+      gameLoop(timestamp) {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.update(timestamp);
+        this.draw();
+        window.requestAnimationFrame(this.gameLoop.bind(this));
+      }
+    }
+
+    // Configuración del canvas
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 1000;
+    canvas.height = 600;
+
+    // Instanciar objetos del juego
+    const ball = new Ball(
+      vec2(200, 200),
+      vec2(currentDifficulty.BALL_SPEED, currentDifficulty.BALL_SPEED),
+      10
+    );
+    const paddle1 = new Paddle(canvas, vec2(10, 50), vec2(PLAYER_SPEED, PLAYER_SPEED), 10, 160, true);
+    const paddle2 = new Paddle(canvas, vec2(canvas.width - 20, 30), vec2(PLAYER_SPEED, PLAYER_SPEED), 10, 160, false);
+
+    // Por defecto, el jugador 1 es humano y el 2 es IA
+    let player1 = new HumanPlayer(paddle1);
+    let player2 = new AIPlayer(paddle2, ball, currentDifficulty, canvas);
+
+    // Crear instancia del juego
+    const game = new Game(canvas, ctx, ball, paddle1, paddle2, player1, player2);
+
+    // Iniciar bucle del juego
+    window.requestAnimationFrame(game.gameLoop.bind(game));
+
+    // Eventos de botones para cambiar el modo de juego
+    document.getElementById('btn1vs1').addEventListener('click', () => {
+      game.setGameMode("1vs1");
+      canvas.focus();
+      console.log("Modo de juego cambiado a: 1 vs 1");
+    });
+    document.getElementById('btn1vsIA').addEventListener('click', () => {
+      game.setGameMode("1vsAI");
+      canvas.focus();
+      console.log("Modo de juego cambiado a: 1 vs IA");
+    });
+
+    // Cambiar dificultad
+    document.getElementById('difficultySelect').addEventListener('change', (e) => {
+      currentDifficulty = DIFFICULTY[e.target.value];
+      // Actualizar velocidad de la pelota conservando la dirección actual
+      const directionX = ball.vel.x >= 0 ? 1 : -1;
+      const directionY = ball.vel.y >= 0 ? 1 : -1;
+      ball.vel.x = directionX * currentDifficulty.BALL_SPEED;
+      ball.vel.y = directionY * currentDifficulty.BALL_SPEED;
+      // Si el modo es IA, actualizar también la dificultad de la IA
+      if (game.player2 instanceof AIPlayer) {
+        game.player2.difficulty = currentDifficulty;
+      }
+      canvas.focus();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f1f1f1;
+            flex-direction: column;
+        }
+        canvas {
+            border: 1px solid #000;
+            background-color: rgb(85, 5, 45);
+        }
+        h1 {
+            color: rgb(28, 42, 236);
+            font-size: 3rem;
+            font-family: 'roboto';
+            position: absolute;
+        }
+        #player1Score {
+            left: 35%;
+        }
+        #player2Score {
+            right: 35%;
+        }
+        #gameMode {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <label for="difficultySelect">Select Difficulty:</label>
+        <select id="difficultySelect">
+            <option value="easy">Fácil</option>
+            <option value="medium" selected>Intermedio</option>
+            <option value="hard">Difícil</option>
+        </select>
+        <label for="gameMode">Select Game Mode:</label>
+        <select id="gameMode">
+            <option value="single">Single Player</option>
+            <option value="multi">Two Players</option>
+        </select>
+    </div>
+    <canvas id="canvas" tabindex="0"></canvas>
+    <h1 id="player1Score">0</h1>
+    <h1 id="player2Score">0</h1>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let isSinglePlayer = true; // Cambia a false para el modo de dos jugadores
+
+        canvas.width = 1000;
+        canvas.height = 600;
+
+        const keys = [];
+        const KEY_UP = 38;
+        const KEY_DOWN = 40;
+        const KEY_W = 87;
+        const KEY_S = 83;
+        const PLAYER_SPEED = 7;
+        //const BALL_SPEED = 7;
+        let lastAIUpdate = 0;
+        const AI_INTERVAL = 1000; // Intervalo de actualización de la IA en milisegundos
+        //const AI_REACTION_DELAY = 100; // Retraso en la reacción en milisegundos
+
+        // Configurar niveles de dificultad
+        const DIFFICULTY = {
+            easy: {
+            RANDOMNESS: 60,
+            MISS_CHANCE: 0.3,
+            AI_REACTION_DELAY: 300,
+            BALL_SPEED: 7
+            },
+            medium: {
+            RANDOMNESS: 40,
+            MISS_CHANCE: 0.1,
+            AI_REACTION_DELAY: 200,
+            BALL_SPEED: 7
+            },
+            hard: {
+            RANDOMNESS: 20,
+            MISS_CHANCE: 0.05,
+            AI_REACTION_DELAY: 100,
+            BALL_SPEED: 9
+            }
+        };
+  
+        // Seleccionar la dificultad (por defecto 'medium')
+        let currentDifficulty = DIFFICULTY.medium;
+
+        window.addEventListener('keydown', function(e) {
+            keys[e.keyCode] = true;
+        });
+
+        window.addEventListener('keyup', function(e) {
+            keys[e.keyCode] = false;
+        });
+
+        function vec2(x, y) {
+            return { x: x, y: y };
+        }
+
+        function Ball(pos, vel, rad) {
+            this.pos = pos;
+            this.vel = vel; //Vector matematico, velocidad en x y en y, se usa para la direccion
+            this.rad = rad;
+
+            this.update = function() {
+                this.pos.x += this.vel.x;
+                this.pos.y += this.vel.y;
+            };
+
+            this.draw = function() {
+                ctx.fillStyle = 'green';
+                ctx.strokeStyle = 'green';
+                ctx.beginPath();
+                ctx.arc(this.pos.x, this.pos.y, this.rad, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            };
+        }
+
+        function Paddle(pos, vel, width, height, isLeft) {
+            this.pos = pos;
+            this.vel = vel;
+            this.width = width;
+            this.height = height;
+            this.score = 0;
+            this.isLeft = isLeft; // Nueva bandera para controlar la pala con W/S o flechas
+
+            this.update = function() {
+                if (this.isLeft) {
+                    // Pala izquierda con W y S
+                    if (keys[KEY_W]) {
+                        this.pos.y -= this.vel.y;
+                    }
+                    if (keys[KEY_S]) {
+                        this.pos.y += this.vel.y;
+                    }
+                } else {
+                    // Pala derecha con flechas
+                    if (keys[KEY_UP]) {
+                        this.pos.y -= this.vel.y;
+                    }
+                    if (keys[KEY_DOWN]) {
+                        this.pos.y += this.vel.y;
+                    }
+                }
+                paddleCollisionWithEdges(this);
+            };
+
+            this.draw = function() {
+                ctx.fillStyle = 'gray';
+                ctx.fillRect(this.pos.x, this.pos.y, this.width, this.height);
+            };
+
+            this.getHalfWidth = function() {
+                return this.width / 2;
+            };
+
+            this.getHalfHeight = function() {
+                return this.height / 2;
+            };
+
+            this.getCenter = function() {
+                return vec2(this.pos.x + this.getHalfWidth(), this.pos.y + this.getHalfHeight());
+            };
+        }
+
+        function paddleCollisionWithEdges(paddle) {
+            if (paddle.pos.y <= 0) {
+                paddle.pos.y = 0;
+            }
+            if (paddle.pos.y + paddle.height >= canvas.height) {
+                paddle.pos.y = canvas.height - paddle.height;
+            }
+        }
+
+        function ballCollisionWithEdges(ball) {
+            if (ball.pos.y + ball.rad >= canvas.height) {
+                ball.pos.y = canvas.height - ball.rad;
+                ball.vel.y *= -1;
+            } else if (ball.pos.y - ball.rad <= 0) {
+                ball.pos.y = ball.rad;
+                ball.vel.y *= -1;
+            }
+        }
+
+        function ballCollisionWithPaddle(ball, paddle) {
+            // Calcular la distancia entre el centro de la pelota y el centro de la pala
+            let dx = Math.abs(ball.pos.x - paddle.pos.x - paddle.width / 2);
+            let dy = Math.abs(ball.pos.y - paddle.pos.y - paddle.height / 2);
+        
+            if (dx <= (ball.rad + paddle.width / 2) && dy <= (ball.rad + paddle.height / 2)) {
+                // Colisión detectada
+                if (dx > paddle.width / 2) {
+                    // Colisión en los lados izquierdo o derecho
+                    ball.vel.x *= -1;
+                    if (ball.pos.x < paddle.pos.x) {
+                        ball.pos.x = paddle.pos.x - ball.rad;
+                    } else {
+                        ball.pos.x = paddle.pos.x + paddle.width + ball.rad;
+                    }
+                } else if (dy > paddle.height / 2) {
+                    // Colisión en los bordes superior o inferior
+                    ball.vel.y *= -1;
+                    if (ball.pos.y < paddle.pos.y) {
+                        ball.pos.y = paddle.pos.y - ball.rad;
+                    } else {
+                        ball.pos.y = paddle.pos.y + paddle.height + ball.rad;
+                    }
+                } else {
+                    // Colisión en las esquinas
+                    ball.vel.x *= -1;
+                    ball.vel.y *= -1;
+                    // Ajusta la posición de la pelota para evitar que se quede atrapada en la esquina
+                    if (ball.pos.x < paddle.pos.x) {
+                        ball.pos.x = paddle.pos.x - ball.rad;
+                    } else if (ball.pos.x > paddle.pos.x + paddle.width) {
+                        ball.pos.x = paddle.pos.x + paddle.width + ball.rad;
+                    }
+                    if (ball.pos.y < paddle.pos.y) {
+                        ball.pos.y = paddle.pos.y - ball.rad;
+                    } else if (ball.pos.y > paddle.pos.y + paddle.height) {
+                        ball.pos.y = paddle.pos.y + paddle.height + ball.rad;
+                    }
+                }
+            }
+        }
+
+        function simulateKeyDown(keyCode) {
+            const event = new KeyboardEvent('keydown', { keyCode });
+            window.dispatchEvent(event);
+        }
+        function simulateKeyUp(keyCode) {
+            const event = new KeyboardEvent('keyup', { keyCode });
+            window.dispatchEvent(event);
+        }
+        
+        function player2AI(ball, paddle, timestamp) {
+            if (timestamp - lastAIUpdate >= AI_INTERVAL) {
+                lastAIUpdate = timestamp;
+    
+                let predictedY = predictBallY(ball);
+
+                // La posición objetivo de la pala puede cambiar, haciendo que los movimientos sean menos predecibles y más naturales.
+                const randomness = Math.random() * currentDifficulty.RANDOMNESS - (currentDifficulty.RANDOMNESS / 2);
+                let targetY = predictedY + randomness;
+
+                //Introduce la posibilidad de que la IA falle intencionalmente, moviendo la pala a una posición aleatoria.
+                if (Math.random() < currentDifficulty.MISS_CHANCE) {
+                    targetY = Math.random() * canvas.height;
+                }
+                paddle.targetY = targetY;
+    
+                // (Aquí añadimos la simulación de pulsaciones según la posición)
+                const paddleCenter = paddle.pos.y + paddle.height / 2;
+                if (paddleCenter < paddle.targetY - 5) {
+                    // Simular flecha abajo
+                    simulateKeyDown(KEY_DOWN);
+                    simulateKeyUp(KEY_UP);
+                } else if (paddleCenter > paddle.targetY + 5) {
+                    // Simular flecha arriba
+                    simulateKeyDown(KEY_UP);
+                    simulateKeyUp(KEY_DOWN);
+                } else {
+                    // Soltar ambas teclas
+                    simulateKeyUp(KEY_UP);
+                    simulateKeyUp(KEY_DOWN);
+                }
+                // Introducir un retraso en la reacción para simular tiempo de reacción humano
+                setTimeout(() => {
+                    // Soltar las teclas después de un breve período
+                    simulateKeyUp(KEY_UP);
+                    simulateKeyUp(KEY_DOWN);
+                }, currentDifficulty.AI_REACTION_DELAY + Math.random() * 200); // Retraso variable entre 100ms y 300ms
+            }
+        }
+    
+        function paddleUpdate(paddle) {
+            const paddleCenter = paddle.pos.y + paddle.height / 2;
+            const speed = PLAYER_SPEED; // Velocidad fija
+        
+            if (paddleCenter < paddle.targetY - 5) {
+                paddle.pos.y += speed;
+            } else if (paddleCenter > paddle.targetY + 5) {
+                paddle.pos.y -= speed;
+            }
+            // Limitar la pala a los bordes del lienzo
+            paddle.pos.y = Math.max(0, Math.min(canvas.height - paddle.height, paddle.pos.y));
+        }
+        
+        function predictBallY(ball) {
+            // (Mantiene tu lógica sin cambios)
+            if (ball.vel.x <= 0) {
+                return ball.pos.y;
+            }
+            let tempBall = {
+                pos: { x: ball.pos.x, y: ball.pos.y },
+                vel: { x: ball.vel.x, y: ball.vel.y },
+                rad: ball.rad
+            };
+            let maxIterations = 500;
+            let iterations = 0;
+            while (tempBall.pos.x < paddle2.pos.x && iterations < maxIterations) {
+                tempBall.pos.x += tempBall.vel.x;
+                tempBall.pos.y += tempBall.vel.y;
+                iterations++;
+                if (tempBall.pos.y + tempBall.rad >= canvas.height) {
+                    tempBall.pos.y = canvas.height - tempBall.rad;
+                    tempBall.vel.y *= -1;
+                } else if (tempBall.pos.y - tempBall.rad <= 0) {
+                    tempBall.pos.y = tempBall.rad;
+                    tempBall.vel.y *= -1;
+                }
+            }
+            if (iterations === maxIterations) {
+                console.warn("predictBallY reached maximum iterations.");
+            }
+        
+            // Introducir margen de error al calcular la posición de la pelota
+            const errorMargin = 15; // Define el margen de error en píxeles
+            const randomError = (Math.random() * 2 * errorMargin) - errorMargin; // Valor entre -10 y +10
+            let predictedY = tempBall.pos.y + randomError;
+        
+            // Asegurar que predictedY esté dentro de los límites del canvas
+            predictedY = Math.max(ball.rad, Math.min(canvas.height - ball.rad, predictedY));
+        
+            return predictedY;
+        }
+    
+
+        function respawnBall(ball) {
+            ball.pos.x = canvas.width / 2;
+            ball.pos.y = Math.random() * canvas.height;
+            ball.vel.x *= -1;
+            ball.vel.y *= -1;
+        }
+
+        function increaseScore(ball, paddle1, paddle2) {
+            if (ball.pos.x <= -ball.rad) {
+                paddle2.score++;
+                document.getElementById('player2Score').innerHTML = paddle2.score;
+                respawnBall(ball);
+            }
+            if (ball.pos.x >= canvas.width + ball.rad) {
+                paddle1.score++;
+                document.getElementById('player1Score').innerHTML = paddle1.score;
+                respawnBall(ball);
+            }
+        }
+
+        const ball = new Ball(vec2(200, 200), vec2(currentDifficulty.BALL_SPEED, currentDifficulty.BALL_SPEED), 10);
+        const paddle1 = new Paddle(vec2(10, 50), vec2(PLAYER_SPEED, PLAYER_SPEED), 10, 160, true);
+        const paddle2 = new Paddle(vec2(canvas.width - 20, 30), vec2(PLAYER_SPEED, PLAYER_SPEED), 10, 160, false);
+        if (isSinglePlayer === true) {
+            paddle2.targetY = paddle2.pos.y + paddle2.height / 2;
+        }
+
+        function gameUpdate(timestamp) {
+            ball.update();
+            paddle1.update();
+    
+            if (isSinglePlayer) {
+                player2AI(ball, paddle2, timestamp);
+                // Se procesan los eventos simulados de teclado para la pala 2
+                paddleUpdate(paddle2);
+            } else {
+                paddle2.update();
+            }
+    
+            paddleCollisionWithEdges(paddle1);
+            paddleCollisionWithEdges(paddle2);
+            ballCollisionWithEdges(ball);
+            ballCollisionWithPaddle(ball, paddle1);
+            ballCollisionWithPaddle(ball, paddle2);
+            increaseScore(ball, paddle1, paddle2);
+        }
+
+        function gameDraw() {
+            ball.draw();
+            paddle1.draw();
+            paddle2.draw();
+        }
+
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            gameUpdate(timestamp);
+            gameDraw();
+            window.requestAnimationFrame(gameLoop);
+        }
+
+        window.requestAnimationFrame(gameLoop);
+
+        const gameModeSelect = document.getElementById('gameMode');
+        gameModeSelect.addEventListener('change', (event) => {
+            isSinglePlayer = event.target.value === 'single';
+            if (!isSinglePlayer) {
+                canvas.focus();
+            }
+            console.log("Modo de juego cambiado a: " + (isSinglePlayer ? "Single Player" : "Two Players"));
+    
+            // Reset targetY when switching to single-player mode
+            if (isSinglePlayer) {
+                paddle2.targetY = paddle2.pos.y + paddle2.height / 2;
+            }
+        });
+
+        document.getElementById('difficultySelect').addEventListener('change', (e) => {
+            currentDifficulty = DIFFICULTY[e.target.value];
+                // Mantener la dirección actual de la pelota
+            const directionX = ball.vel.x >= 0 ? 1 : -1;
+            const directionY = ball.vel.y >= 0 ? 1 : -1;
+            ball.vel.x = directionX * currentDifficulty.BALL_SPEED;
+            ball.vel.y = directionY * currentDifficulty.BALL_SPEED;
+            canvas.focus();
+          });
+    </script>
+</body>
+</html>

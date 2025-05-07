@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1 vs 1 Local</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f1f1f1;
+            flex-direction: column;
+        }
+        canvas {
+            border: 1px solid #000;
+            background-color: rgb(85, 5, 45);
+        }
+        h1 {
+            color: rgb(28, 42, 236);
+            font-size: 3rem;
+            font-family: 'roboto';
+            position: absolute;
+        }
+        #player1Score {
+            left: 35%;
+        }
+        #player2Score {
+            right: 35%;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas" tabindex="0"></canvas>
+    <h1 id="player1Score">0</h1>
+    <h1 id="player2Score">0</h1>
+
+    <script type="module">
+        import { Ball } from './Ball.js';
+        import { Paddle } from './Paddle.js';
+        import { Game } from './Game.js';
+    
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+    
+        canvas.width = 1000;
+        canvas.height = 600;
+    
+        const game = new Game(canvas, false, { BALL_SPEED: 7 });
+        game.start();
+    </script>
+</body>
+</html>
